@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Luyện đọc nốt Piano</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">𝄞</span>
+      <div>
+        <h1>Luyện đọc nốt Piano</h1>
+        <p class="tagline">Nhìn nốt → tìm phím → đặt đúng tay, đúng ngón</p>
+      </div>
+    </div>
+    <div class="stats" id="stats">
+      <div class="stat"><span class="stat-value" id="stCorrect">0/0</span><span class="stat-label">Đúng</span></div>
+      <div class="stat"><span class="stat-value" id="stAcc">–</span><span class="stat-label">Chính xác</span></div>
+      <div class="stat"><span class="stat-value" id="stStreak">0</span><span class="stat-label">Chuỗi</span></div>
+      <div class="stat"><span class="stat-value" id="stBest">0</span><span class="stat-label">Kỷ lục</span></div>
+      <div class="stat"><span class="stat-value" id="stTime">–</span><span class="stat-label">TB thời gian</span></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="practice">
+      <div class="staff-card">
+        <div class="staff-meta">
+          <span class="chip" id="clefLabel">Khóa Sol</span>
+          <span class="chip chip-soft" id="positionLabel" hidden></span>
+        </div>
+        <div class="staff" id="staff" aria-label="Khuông nhạc"></div>
+        <div class="feedback" id="feedback" role="status" aria-live="polite">Nốt này là phím nào?</div>
+      </div>
+
+      <div class="answer-panel" id="answerPanel">
+        <div class="answer-row">
+          <div class="answer-slot">
+            <span class="slot-label" id="slotLabel">Phím</span>
+            <span class="slot-value" id="slotKey">— bấm phím đàn —</span>
+          </div>
+          <div class="hands" id="fingerPicker">
+            <div class="hand hand-left">
+              <span class="hand-title">Tay trái</span>
+              <div class="fingers">
+                <button class="finger" data-hand="L" data-finger="5">5</button>
+                <button class="finger" data-hand="L" data-finger="4">4</button>
+                <button class="finger" data-hand="L" data-finger="3">3</button>
+                <button class="finger" data-hand="L" data-finger="2">2</button>
+                <button class="finger" data-hand="L" data-finger="1">1</button>
+              </div>
+            </div>
+            <div class="hand hand-right">
+              <span class="hand-title">Tay phải</span>
+              <div class="fingers">
+                <button class="finger" data-hand="R" data-finger="1">1</button>
+                <button class="finger" data-hand="R" data-finger="2">2</button>
+                <button class="finger" data-hand="R" data-finger="3">3</button>
+                <button class="finger" data-hand="R" data-finger="4">4</button>
+                <button class="finger" data-hand="R" data-finger="5">5</button>
+              </div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" id="btnNext">Câu tiếp ⏎</button>
+          </div>
+        </div>
+        <p class="hint" id="hintText"></p>
+      </div>
+    </section>
+
+    <aside class="settings" id="settings">
+      <h2>Cài đặt</h2>
+
+      <fieldset>
+        <legend>Tay luyện</legend>
+        <label class="radio"><input type="radio" name="hands" value="any"> Một tay — ngẫu nhiên trái / phải</label>
+        <label class="radio"><input type="radio" name="hands" value="R"> Chỉ tay phải</label>
+        <label class="radio"><input type="radio" name="hands" value="L"> Chỉ tay trái</label>
+        <label class="radio"><input type="radio" name="hands" value="both"> Cả hai tay cùng lúc (khuông đôi)</label>
+      </fieldset>
+
+      <fieldset id="clefSet">
+        <legend>Khóa nhạc</legend>
+        <p class="lock-note" id="clefLockNote" hidden>Chế độ hai tay luôn dùng khuông đôi: khuông trên = tay phải, khuông dưới = tay trái.</p>
+        <div class="clef-grid" id="clefGrid"></div>
+        <div class="row-buttons">
+          <button class="btn btn-small" id="btnClefPiano">Chỉ khuông đôi</button>
+          <button class="btn btn-small" id="btnClefAll">Hỗn hợp tất cả</button>
+        </div>
+        <p class="note-small">Chọn nhiều khóa → mỗi câu sẽ ngẫu nhiên một khóa.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Kiểu luyện</legend>
+        <label class="radio"><input type="radio" name="learn" value="test"> Kiểm tra (tính điểm)</label>
+        <label class="radio"><input type="radio" name="learn" value="ref"> Có tra cứu — bảng nốt + mẹo nhớ</label>
+        <p class="note-small">Chế độ tra cứu không tính vào thống kê.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Trả lời</legend>
+        <label class="radio"><input type="radio" name="mode" value="finger"> Nốt + tay + ngón</label>
+        <label class="radio"><input type="radio" name="mode" value="note"> Chỉ nhận diện nốt</label>
+      </fieldset>
+
+      <fieldset id="positionSet">
+        <legend>Thế tay (5 ngón)</legend>
+        <select id="posPreset"></select>
+        <div class="custom-pos" id="customPos">
+          <label>Tay trái — ngón 5 ở <select id="posL"></select></label>
+          <label>Tay phải — ngón 1 ở <select id="posR"></select></label>
+        </div>
+        <label class="inline" id="randomEveryWrap">Đổi thế sau mỗi
+          <input type="number" id="randomEvery" min="1" max="100"> câu</label>
+        <label class="check"><input type="checkbox" id="optShowPos"> Hiện thế tay trên bàn phím</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Độ khó</legend>
+        <label class="inline">Dòng kẻ phụ tối đa
+          <select id="maxLedger">
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option>
+          </select>
+        </label>
+        <label class="inline">Dấu hóa
+          <select id="accidentals">
+            <option value="none">Không</option>
+            <option value="sharp">Thăng ♯</option>
+            <option value="flat">Giáng ♭</option>
+            <option value="both">Cả hai</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Hiển thị</legend>
+        <label class="inline">Tên nốt
+          <select id="naming">
+            <option value="vi">Đô Rê Mi</option>
+            <option value="en">C D E</option>
+            <option value="both">Cả hai</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="optKeyNames"> Hiện tên trên mọi phím (gợi ý)</label>
+        <label class="check"><input type="checkbox" id="optSound"> Âm thanh</label>
+        <label class="check"><input type="checkbox" id="optAutoNext"> Tự chuyển câu khi đúng</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Nốt hay sai</legend>
+        <ol class="weak-list" id="weakList"></ol>
+        <button class="btn btn-small btn-ghost" id="btnResetStats">Xóa thống kê</button>
+      </fieldset>
+
+      <details class="shortcuts">
+        <summary>Phím tắt</summary>
+        <ul>
+          <li><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd> — tay trái ngón 5 4 3 2 1</li>
+          <li><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd><kbd>;</kbd> — tay phải ngón 1 2 3 4 5</li>
+          <li><kbd>Enter</kbd> / <kbd>Space</kbd> — câu tiếp</li>
+          <li><kbd>?</kbd> — gợi ý (chế độ tra cứu)</li>
+        </ul>
+      </details>
+    </aside>
+  </main>
+
+  <section class="ref-panel" id="refPanel" aria-label="Bảng tra cứu nốt" hidden>
+    <div class="ref-head">
+      <h2>📖 Bảng tra cứu nốt</h2>
+      <div class="ref-legend" id="refLegend">
+        <span><i class="dot dot-line"></i>trên dòng kẻ</span>
+        <span><i class="dot dot-space"></i>trong khe</span>
+        <span><i class="dot dot-anchor"></i>nốt mốc</span>
+      </div>
+      <p class="ref-hint" id="refHint" hidden></p>
+      <button class="btn btn-small" id="btnHint">💡 Gợi ý vị trí nốt này</button>
+    </div>
+    <div class="ref-body">
+      <div class="ref-chart" id="refChart"></div>
+      <div class="ref-tips" id="refTips"></div>
+    </div>
+  </section>
+
+  <section class="keyboard-wrap" aria-label="Bàn phím piano">
+    <div class="keyboard-scroll" id="keyboardScroll">
+      <div class="keyboard" id="keyboard"></div>
+    </div>
+  </section>
+
+  <script src="vendor/vexflow.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/staff.js"></script>
+  <script src="js/reference.js"></script>
+  <script src="js/keyboard.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

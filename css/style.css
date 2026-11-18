@@ -74,6 +74,8 @@ button { font: inherit; color: inherit; }
 .staff { display: flex; justify-content: center; min-height: 160px; }
 .staff svg { width: 100%; max-width: 560px; height: auto; max-height: 250px; }
 .staff svg.grand { max-height: 330px; max-width: 440px; }
+.staff svg.phrase { max-width: 640px; max-height: 290px; }
+.staff svg.phrase.grand { max-height: 370px; }
 .feedback {
   margin-top: 4px; text-align: center; font-size: 17px; min-height: 28px;
   padding: 8px 12px; border-radius: 10px; transition: background .2s;
@@ -113,6 +115,8 @@ button { font: inherit; color: inherit; }
 .finger.is-correct { background: var(--ok) !important; border-color: var(--ok) !important; color: #fff !important; }
 .finger.is-wrong { background: var(--bad) !important; border-color: var(--bad) !important; color: #fff !important; }
 .finger.assigned { box-shadow: inset 0 -4px 0 currentColor; }
+.finger.is-off { opacity: .3; pointer-events: none; }
+.first-note { color: #c2410c; }
 .hand-left .finger.assigned { color: var(--left); border-color: var(--left); }
 .hand-right .finger.assigned { color: var(--right); border-color: var(--right); }
 .slot-value .slot-line { display: block; font-size: 15px; }

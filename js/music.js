@@ -105,8 +105,8 @@ window.PT = window.PT || {};
     return { L: randInt(14, 23), R: randInt(28, 35) }; // T: Đô2..Mi3, P: Đô4..Đô5
   }
 
-  function maybeAccidental(d, accSetting) {
-    if (accSetting === 'none' || Math.random() > 0.35) return 0;
+  function maybeAccidental(d, accSetting, prob = 0.35) {
+    if (accSetting === 'none' || Math.random() > prob) return 0;
     const step = mod(d, 7);
     const options = [];
     if ((accSetting === 'sharp' || accSetting === 'both') && step !== 2 && step !== 6) options.push(1); // bỏ E#, B#
@@ -118,7 +118,7 @@ window.PT = window.PT || {};
 
   /**
    * Sinh câu hỏi.
-   * settings: { clefs[], mode, maxLedger, accidentals, hands }
+   * settings: { clefs[], mode ('finger' | 'note' | 'phrase'), maxLedger, accidentals, hands, phraseLen }
    *   hands: 'any' (một tay, ngẫu nhiên) | 'R' | 'L' | 'both' (hai tay cùng lúc, luôn dùng khuông đôi)
    * pos: { L, R } (chỉ dùng ở chế độ finger)
    * last: câu trước (để tránh lặp)
@@ -135,6 +135,7 @@ window.PT = window.PT || {};
 
   function generate(settings, pos, last) {
     const hands = settings.hands || 'any';
+    if (settings.mode === 'phrase') return generatePhrase(settings, last);
     if (hands === 'both') return generateBoth(settings, pos, last);
 
     const clefs = settings.clefs.length ? settings.clefs : ['treble'];
@@ -230,6 +231,113 @@ window.PT = window.PT || {};
       return { clefKey: 'grand', both: true, parts };
     }
     return { error: 'Không tạo được cặp nốt phù hợp.' };
+  }
+
+  /* ---------- Câu nhạc: nhiều nốt trong một thế 5 ngón, hỏi ngón cho nốt đầu ---------- */
+  // Bước nhảy giữa hai nốt liền nhau (bậc) và trọng số: chủ yếu đi liền bậc, đôi khi nhảy quãng
+  const STEP_W = [[1, 50], [2, 33], [3, 12], [4, 5]];
+  function randStep() {
+    let r = Math.random() * 100;
+    for (const [s, w] of STEP_W) { if ((r -= w) < 0) return Math.random() < 0.5 ? -s : s; }
+    return 1;
+  }
+  // Giai điệu gồm len bậc trong khoảng 0..4, luôn chạm cả hai đầu (0 và 4)
+  // → câu nhạc phủ đúng 5 phím trắng nên chỉ có một cách đặt tay không phải đổi thế.
+  function phraseMelody(len) {
+    for (let t = 0; t < 400; t++) {
+      const ks = [randInt(0, 4)];
+      let guard = 0;
+      while (ks.length < len && guard++ < 200) {
+        const nx = ks[ks.length - 1] + randStep();
+        if (nx >= 0 && nx <= 4) ks.push(nx);
+      }
+      if (ks.length === len && ks.includes(0) && ks.includes(4)) return ks;
+    }
+    return [0, 2, 4, 3, 1, 2, 3, 4].slice(0, len);
+  }
+
+  // Các bậc thấp nhất (low) hợp lệ để đặt câu nhạc lên khuông `staff`.
+  // splitByHand: tay phải từ La3 trở lên, tay trái tới Mi4 (như khuông đôi).
+  function phraseLows(staff, hand, splitByHand, maxL) {
+    const mid = CLEFS[staff].mid;
+    const maxOff = 5 + 2 * maxL;
+    const lows = [];
+    for (let low = mid - maxOff; low + 4 <= mid + maxOff; low++) {
+      if (ledgerCount(low, mid) > maxL || ledgerCount(low + 4, mid) > maxL) continue;
+      if (splitByHand && (hand === 'R' ? low < 26 : low + 4 > 30)) continue;
+      lows.push(low);
+    }
+    return lows;
+  }
+
+  function buildPhrase(hand, staff, low, ks, settings) {
+    const accBy = {}; // cùng một bậc luôn cùng dấu hóa trong cả câu
+    const notes = [];
+    for (const k of ks) {
+      const d = low + k;
+      if (!(d in accBy)) accBy[d] = maybeAccidental(d, settings.accidentals, 0.2);
+      const n = fromDia(d, accBy[d]);
+      if (!inPiano(n)) return null;
+      notes.push(n);
+    }
+    const first = notes[0];
+    return {
+      hand, staff, low, notes, note: first, midi: midiOf(first),
+      answers: [{ hand, finger: fingerFor(hand, low, dia(first)) }],
+    };
+  }
+
+  const samePhrase = (last, clefKey, parts) => !!last && !last.error && last.phrase && last.clefKey === clefKey
+    && last.parts.length === parts.length
+    && last.parts.every((p, i) => p.notes.map(midiOf).join() === parts[i].notes.map(midiOf).join());
+
+  function generatePhrase(settings, last) {
+    const hands = settings.hands || 'any';
+    const maxL = settings.maxLedger;
+    const len = Math.max(4, Math.min(8, +settings.phraseLen || 5));
+
+    if (hands === 'both') {
+      const lowsR = phraseLows('treble', 'R', true, maxL);
+      const lowsL = phraseLows('bass', 'L', true, maxL);
+      if (!lowsR.length || !lowsL.length) {
+        return { error: 'Không đủ chỗ trên khuông đôi cho câu nhạc 5 phím. Hãy tăng số dòng kẻ phụ.' };
+      }
+      for (let tries = 0; tries < 100; tries++) {
+        const lowR = pick(lowsR), lowL = pick(lowsL);
+        if (lowR <= lowL + 4) continue; // hai tay không chồng lên nhau
+        const pR = buildPhrase('R', 'treble', lowR, phraseMelody(len), settings);
+        const pL = buildPhrase('L', 'bass', lowL, phraseMelody(len), settings);
+        if (!pR || !pL) continue;
+        const parts = [pR, pL];
+        if (samePhrase(last, 'grand', parts) && tries < 80) continue;
+        return { clefKey: 'grand', both: true, phrase: true, parts };
+      }
+      return { error: 'Không tạo được câu nhạc phù hợp.' };
+    }
+
+    const clefs = settings.clefs.length ? settings.clefs : ['treble'];
+    const allowed = hands === 'any' ? ['L', 'R'] : [hands];
+    const options = [];
+    for (const clefKey of clefs) {
+      for (const hand of allowed) {
+        const grand = clefKey === 'grand';
+        const staff = grand ? (hand === 'R' ? 'treble' : 'bass') : clefKey;
+        const lows = phraseLows(staff, hand, grand || hands !== 'any', maxL);
+        if (lows.length) options.push({ clefKey, staff, hand, lows });
+      }
+    }
+    if (!options.length) {
+      return { error: 'Các khóa đã chọn không đủ chỗ cho câu nhạc 5 phím ở tay này. Hãy tăng số dòng kẻ phụ hoặc thêm khóa.' };
+    }
+    for (let tries = 0; tries < 80; tries++) {
+      const o = pick(options);
+      const part = buildPhrase(o.hand, o.staff, pick(o.lows), phraseMelody(len), settings);
+      if (!part) continue;
+      const parts = [part];
+      if (samePhrase(last, o.clefKey, parts) && tries < 60) continue;
+      return { clefKey: o.clefKey, both: false, phrase: true, parts };
+    }
+    return { error: 'Không tạo được câu nhạc phù hợp.' };
   }
 
   PT.music = {

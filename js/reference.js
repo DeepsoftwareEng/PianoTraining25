@@ -186,7 +186,8 @@ window.PT = window.PT || {};
       const d = M.dia(p.note);
       const acc = p.note.acc === 1 ? ' — dấu thăng ♯: phím đen ngay bên phải' : p.note.acc === -1 ? ' — dấu giáng ♭: phím đen ngay bên trái' : '';
       const ring = Math.abs(d - mid) <= rangeFor(maxLedger) ? ' (vòng xanh)' : '';
-      const who = q.both ? `<b>${p.hand === 'R' ? 'Tay phải' : 'Tay trái'}:</b> nốt ` : 'Nốt ';
+      const first = q.phrase ? 'nốt đầu tiên ' : 'nốt ';
+      const who = q.both ? `<b>${p.hand === 'R' ? 'Tay phải' : 'Tay trái'}:</b> ${first}` : first[0].toUpperCase() + first.slice(1);
       return `${who}nằm <b>${positionText(d, mid)}</b>${ring}${acc}`;
     }).join(' · ') + '.';
   }

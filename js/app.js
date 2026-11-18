@@ -21,6 +21,7 @@
     keyNames: false,
     sound: true,
     autoNext: true,
+    phraseLen: 5,
   };
   const EMPTY_STATS = () => ({ total: 0, correct: 0, streak: 0, best: 0, timeSum: 0, weak: {} });
 
@@ -36,6 +37,7 @@
   settings.clefs = settings.clefs.filter((c) => M.CLEFS[c]);
   if (!settings.clefs.length) settings.clefs = [...DEFAULTS.clefs];
   if (!['any', 'R', 'L', 'both'].includes(settings.hands)) settings.hands = 'any';
+  if (!['finger', 'note', 'phrase'].includes(settings.mode)) settings.mode = 'finger';
   let stats = store.load('pt.stats', EMPTY_STATS());
 
   const state = {
@@ -49,6 +51,7 @@
     randomPos: null,
     randomCount: 0,
     autoTimer: null,
+    playTimers: [],
   };
 
   const saveSettings = () => store.save('pt.settings', settings);
@@ -57,6 +60,8 @@
   const HandName = (h) => (h === 'L' ? 'Tay trái' : 'Tay phải');
   const fmtAnswer = (a) => `${handName(a.hand)} ngón ${a.finger}`;
   const isFinger = () => settings.mode === 'finger';
+  const isPhrase = () => settings.mode === 'phrase';
+  const usesFingers = () => isFinger() || isPhrase(); // có dùng nút chọn ngón
   const activeHands = () => (settings.hands === 'R' ? ['R'] : settings.hands === 'L' ? ['L'] : ['L', 'R']);
   const keyName = (m) => M.midiLabel(m, settings.naming);
   const keyShort = (m) => M.midiShort(m, settings.naming);
@@ -88,8 +93,25 @@
   }
 
   /* ---------- Câu hỏi ---------- */
+  function stopPhrasePlayback() {
+    state.playTimers.forEach(clearTimeout);
+    state.playTimers = [];
+  }
+
+  // Phát lần lượt các nốt của câu nhạc (hai tay thì phát cùng nhịp)
+  function playPhrase(q, delay = 0) {
+    stopPhrasePlayback();
+    const len = q.parts[0].notes.length;
+    for (let i = 0; i < len; i++) {
+      state.playTimers.push(setTimeout(() => {
+        q.parts.forEach((p) => PT.audio.play(M.midiOf(p.notes[i]), { duration: 0.9 }));
+      }, delay + i * 330));
+    }
+  }
+
   function newQuestion() {
     clearTimeout(state.autoTimer);
+    stopPhrasePlayback();
     const fingerMode = isFinger();
     state.pos = fingerMode ? currentPosition(true) : null;
     const q = M.generate(settings, state.pos, state.q);
@@ -139,6 +161,11 @@
   }
 
   function promptText(q) {
+    if (q.phrase) {
+      const base = 'Cả câu chơi trọn trong một thế 5 ngón, không đổi thế.';
+      if (q.both) return `${base} Nốt <b class="first-note">đầu tiên</b> của mỗi tay đánh ngón mấy? (<b>tay phải</b> khuông trên, <b>tay trái</b> khuông dưới)`;
+      return `${base} Nốt <b class="first-note">đầu tiên</b> đánh <b>${handName(q.parts[0].hand)}</b> ngón mấy?`;
+    }
     if (q.both) {
       return isFinger()
         ? 'Hai nốt cùng lúc: <b>tay phải</b> đọc khuông trên, <b>tay trái</b> đọc khuông dưới. Mỗi tay: bấm phím rồi chọn ngón.'
@@ -175,7 +202,7 @@
   function onKeyPress(midi) {
     if (settings.sound) PT.audio.play(midi);
     const q = state.q;
-    if (!q || state.answered) return;
+    if (!q || state.answered || q.phrase) return; // chế độ câu nhạc: phím đàn chỉ để nghe thử
     const idx = state.picks.findIndex((p) => p.key === midi);
 
     if (!isFinger()) {
@@ -196,7 +223,18 @@
   }
 
   function onFinger(hand, finger) {
-    if (!state.q || state.answered || !activeHands().includes(hand)) return;
+    const q = state.q;
+    if (!q || state.answered) return;
+    if (q.phrase) {
+      if (!q.parts.some((p) => p.hand === hand)) return;
+      const prev = state.picks.find((p) => p.hand === hand);
+      state.picks = state.picks.filter((p) => p.hand !== hand); // mỗi tay một câu trả lời, chọn lại để sửa
+      if (!prev || prev.finger !== finger) state.picks.push({ hand, finger });
+      refreshPicks();
+      if (state.picks.length >= q.parts.length) submit();
+      return;
+    }
+    if (!activeHands().includes(hand)) return;
     const p = state.pendingFinger;
     state.pendingFinger = p && p.hand === hand && p.finger === finger ? null : { hand, finger };
     tryAssign();
@@ -229,6 +267,7 @@
       b.classList.toggle('active', !!pf && pf.hand === h && pf.finger === f);
       b.classList.toggle('assigned', state.picks.some((p) => p.hand === h && p.finger === f));
       b.classList.remove('is-correct', 'is-wrong');
+      b.classList.toggle('is-off', !!q && !!q.phrase && !q.parts.some((p) => p.hand === h));
     });
 
     const slot = $('slotKey');
@@ -236,6 +275,12 @@
     let html;
     if (!q) {
       html = '—';
+    } else if (q.phrase) {
+      label.textContent = 'Nốt đầu tiên';
+      html = q.parts.map((part) => {
+        const p = state.picks.find((x) => x.hand === part.hand);
+        return `<span class="slot-line slot-${part.hand}"><b>${HandName(part.hand)}:</b> ${p ? `ngón ${p.finger}` : '— chọn ngón —'}</span>`;
+      }).join('');
     } else if (q.both && fingerMode) {
       label.textContent = 'Hai tay';
       html = ['R', 'L'].map((h) => {
@@ -258,6 +303,13 @@
 
   function evaluate(q) {
     const fingerMode = isFinger();
+    if (q.phrase) {
+      return q.parts.map((part) => {
+        const pick = state.picks.find((p) => p.hand === part.hand) || null;
+        const fingerOk = !!pick && part.answers.some((a) => a.finger === pick.finger);
+        return { part, pick, keyOk: true, fingerOk, ok: fingerOk };
+      });
+    }
     return q.parts.map((part) => {
       let pick;
       if (!fingerMode) pick = state.picks.find((p) => p.key === part.midi) || null;
@@ -288,7 +340,7 @@
     else stats.streak = 0;
     results.forEach((r) => {
       const clef = M.CLEFS[q.clefKey === 'grand' ? r.part.staff : q.clefKey];
-      const wkey = `${clef.label}|${M.nameEn(r.part.note)}`;
+      const wkey = `${q.phrase ? 'Câu nhạc · ' : ''}${clef.label}|${M.nameEn(r.part.note)}`;
       const w = stats.weak[wkey] || (stats.weak[wkey] = { miss: 0, total: 0 });
       w.total++;
       if (!r.ok) w.miss++;
@@ -297,7 +349,54 @@
     renderStats();
   }
 
+  function markPhraseAnswer(q, results, ok, elapsed, refMode) {
+    PT.staff.render($('staff'), q, true); // hiện số ngón cho cả câu
+    // bàn phím: vùng 5 phím của câu nhạc + đánh dấu phím của nốt đầu
+    const zone = {};
+    q.parts.forEach((p) => { zone[p.hand] = p.low; });
+    KB.setZones(zone, true, q.parts.map((p) => p.hand));
+    results.forEach((r) => {
+      KB.mark(r.part.midi, r.ok ? 'correct' : 'reveal');
+      const badges = [...r.part.answers];
+      if (r.pick && !r.ok) badges.unshift({ hand: r.pick.hand, finger: r.pick.finger, bad: true });
+      KB.setBadge(r.part.midi, badges);
+    });
+    const answers = q.parts.flatMap((p) => p.answers);
+    document.querySelectorAll('.finger').forEach((b) => {
+      const h = b.dataset.hand, f = +b.dataset.finger;
+      const isAns = answers.some((a) => a.hand === h && a.finger === f);
+      const isChosen = state.picks.some((p) => p.hand === h && p.finger === f);
+      b.classList.remove('active', 'assigned');
+      b.classList.toggle('is-correct', isAns);
+      b.classList.toggle('is-wrong', isChosen && !isAns);
+    });
+
+    const tag = refMode ? ' <span class="muted">· tra cứu, không tính điểm</span>' : '';
+    const time = `<span class="time">${elapsed.toFixed(1)}s</span>`;
+    const n = settings.naming;
+    // Giải thích: nốt thấp nhất / cao nhất của câu ứng với ngón nào
+    const why = (part) => {
+      const lo = M.diaName(part.low, n), hi = M.diaName(part.low + 4, n);
+      return part.hand === 'R'
+        ? `thấp nhất ${lo} = ngón 1, cao nhất ${hi} = ngón 5`
+        : `thấp nhất ${lo} = ngón 5, cao nhất ${hi} = ngón 1`;
+    };
+    const lines = results.map((r) => {
+      const p = r.part;
+      const mine = r.ok || !r.pick ? '' : ` <span class="muted">(bạn chọn ngón ${r.pick.finger})</span>`;
+      return `<span class="fb-line ${r.ok ? 'fb-line-ok' : 'fb-line-bad'}">${r.ok ? '✓' : '✗'} ${HandName(p.hand)}: `
+        + `nốt đầu <strong>${M.noteName(p.note, n)}</strong> → <b>ngón ${p.answers[0].finger}</b>${mine}`
+        + ` <span class="muted">— ${why(p)}</span></span>`;
+    }).join('');
+    setFeedback(`${ok ? '✓ Chính xác!' : '✗ Chưa đúng.'} ${time}${tag}<div class="fb-lines">${lines}</div>`, ok ? 'ok' : 'bad');
+
+    const len = q.parts[0].notes.length;
+    if (settings.sound) playPhrase(q, ok ? 150 : 380);
+    if (ok && settings.autoNext) state.autoTimer = setTimeout(newQuestion, Math.max(refMode ? 2400 : 1800, len * 330 + 900));
+  }
+
   function markAnswer(q, results, ok, elapsed, refMode) {
+    if (q.phrase) { markPhraseAnswer(q, results, ok, elapsed, refMode); return; }
     const fingerMode = isFinger();
     KB.markSelected(null);
     KB.clearBadges();
@@ -441,6 +540,7 @@
     };
     $('optShowPos').onchange = (e) => { settings.showPos = e.target.checked; saveSettings(); KB.setZones(state.pos, settings.showPos, activeHands()); };
 
+    $('phraseLen').onchange = (e) => { settings.phraseLen = +e.target.value; changed(); };
     $('maxLedger').onchange = (e) => { settings.maxLedger = +e.target.value; changed(); };
     $('accidentals').onchange = (e) => { settings.accidentals = e.target.value; changed(); };
     $('naming').onchange = (e) => { settings.naming = e.target.value; saveSettings(); refreshLabels(); };
@@ -464,7 +564,9 @@
     $('clefSet').classList.toggle('locked', both);
     $('clefLockNote').hidden = !both;
     $('positionSet').hidden = !fingerMode;
-    $('fingerPicker').hidden = !fingerMode;
+    $('fingerPicker').hidden = !usesFingers();
+    $('phraseLenWrap').hidden = !isPhrase();
+    $('phraseLen').value = settings.phraseLen;
     document.querySelector('.hand-left').hidden = settings.hands === 'R';
     document.querySelector('.hand-right').hidden = settings.hands === 'L';
     $('posPreset').value = settings.posPreset;
@@ -480,7 +582,9 @@
     $('optKeyNames').checked = settings.keyNames;
     $('optSound').checked = settings.sound;
     $('optAutoNext').checked = settings.autoNext;
-    $('hintText').textContent = !fingerMode
+    $('hintText').textContent = isPhrase()
+      ? 'Tìm nốt thấp nhất và cao nhất của câu: tay phải đặt ngón 1 lên nốt thấp nhất, tay trái đặt ngón 5 lên nốt thấp nhất — rồi suy ra ngón cho nốt đầu (tô màu). Phím đàn chỉ để nghe thử.'
+      : !fingerMode
       ? (both ? 'Bấm 2 phím ứng với 2 nốt (thứ tự nào cũng được). Bấm lại một phím để bỏ chọn.' : 'Bấm phím trên đàn ứng với nốt trên khuông.')
       : both
         ? 'Với từng tay: bấm phím rồi chọn ngón (hoặc ngược lại). Chọn lại tay đó để sửa. Ngón 1 = ngón cái, 5 = ngón út.'
@@ -515,7 +619,7 @@
       return;
     }
     if (key === '?' && settings.learn === 'ref') { e.preventDefault(); renderRef(true); return; }
-    if (isFinger() && SHORTCUTS[key]) {
+    if (usesFingers() && SHORTCUTS[key]) {
       e.preventDefault();
       onFinger(...SHORTCUTS[key]);
     }
